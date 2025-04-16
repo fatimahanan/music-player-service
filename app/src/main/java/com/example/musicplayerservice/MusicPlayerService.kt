@@ -4,21 +4,20 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.media.MediaPlayer
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
 
-class MusicPlayerService : Service(){
+class MusicPlayerService(var mediaPlayer: MediaPlayerHelper? = null) : Service(){
     companion object{
-        private val channelId = "MusicPlayerServiceChannel"
+        private const val channelId = "MusicPlayerServiceChannel"
     }
-    private var mediaPlayer:MediaPlayer?=null
+
     override fun onCreate() {
         super.onCreate()
+        mediaPlayer = MediaPlayerHelper()  //initialize media player helper
         createNotificationChannel()
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Music Player")
@@ -29,31 +28,37 @@ class MusicPlayerService : Service(){
         Log.d("MusicPlayerService", "Service created")
     }
 
-    private val binder= object : MusicServiceAIDL.Stub() {
-    override fun play() {
-    Log.d("MusicPlayerService", "Play Method Invoked")
-    if (mediaPlayer == null) {
-        try {
-            mediaPlayer = MediaPlayer.create(this@MusicPlayerService, R.raw.wake_me_up).apply {
-                isLooping=true
-            }
-            mediaPlayer?.start()
-            Log.d("MusicPlayerService", "Music started in background")
-        } catch (e: Exception) {
-            Log.e("MusicPlayerService", "Error initializing MediaPlayer: ${e.message}")
+    val binder : MusicServiceAIDL.Stub = object : MusicServiceAIDL.Stub(), MusicServiceBinder {
+        override fun play() {
+            mediaPlayer?.playCurrent(this@MusicPlayerService)
         }
-    } else {
-        if (mediaPlayer?.isPlaying == true) {
-            Log.d("MusicPlayerService", "Music is already playing.")
-        } else {
-            mediaPlayer?.start()
-            Log.d("MusicPlayerService", "Resumed music playback.")
-        }
-    }
-}
 
         override fun pause() {
             mediaPlayer?.pause()
+        }
+
+        override fun playNext() {
+            mediaPlayer?.playNext(this@MusicPlayerService)
+        }
+
+        override fun getCurrentPosition(): Int {
+            return mediaPlayer?.getCurrentPosition() ?: 0
+        }
+
+        override fun getDuration(): Int {
+            return mediaPlayer?.getDuration() ?: 0
+        }
+
+        override fun seekTo(position: Int) {
+            mediaPlayer?.seekTo(position)
+        }
+
+        override fun getTrackTitle(): String {
+            return mediaPlayer?.getCurrentTrackTitle() ?: "Unknown"
+        }
+
+        override fun getTrackImageName(): String {
+            return mediaPlayer?.getCurrentTrackImage() ?: "whereisheaven"  // return resource ID as int
         }
 
     }
@@ -64,14 +69,8 @@ class MusicPlayerService : Service(){
 
     override fun onDestroy() {
         super.onDestroy()
-//        mediaPlayer?.release()
-//        mediaPlayer=null
-        mediaPlayer?.let {
-            if (it.isPlaying) {
-                it.stop()
-            }
-            it.release()
-        }
+        Log.d("MusicPlayerService", "onDestroy called")
+        mediaPlayer?.release()
         stopForeground(true)
         Log.d("MusicPlayerService", "MediaPlayer released")
     }
@@ -84,8 +83,9 @@ class MusicPlayerService : Service(){
             description = descriptionText
         }
         val notificationManager: NotificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
         Log.d("MusicPlayerService", "Notification channel created")
     }
 }
+
